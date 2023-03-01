@@ -30,19 +30,6 @@ public class ReactorNettyHttpClientInstrumentationTest extends AbstractHttpClien
     @Before
     public void setUp() {
         client = HttpClient.create();
-        client.doOnRequest((httpClientRequest, connection) -> {
-            System.out.println("REQUEST");
-        });
-        client.doOnResponse((httpClientResponse, connection) -> {
-            System.out.println("RESPONSE");
-        });
-        client.doOnError((httpClientRequest, throwable) -> {
-            System.out.println("ERROR - REQ");
-            throwable.printStackTrace();
-        }, (httpClientResponse, throwable) -> {
-            System.out.println("ERROR - RES");
-            throwable.printStackTrace();
-        });
     }
 
     @Override

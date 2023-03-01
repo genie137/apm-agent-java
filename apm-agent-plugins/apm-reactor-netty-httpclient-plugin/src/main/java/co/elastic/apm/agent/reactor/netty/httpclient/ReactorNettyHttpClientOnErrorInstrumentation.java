@@ -18,44 +18,36 @@
  */
 package co.elastic.apm.agent.reactor.netty.httpclient;
 
-import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.matcher.ElementMatcher;
-import reactor.netty.Connection;
 import reactor.netty.http.client.HttpClientRequest;
+import reactor.netty.http.client.HttpClientResponse;
 
 import java.util.function.BiConsumer;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
-
-public class ReactorNettyHttpClientInstrumentation extends AbstractReactorNettyHttpClientInstrumentation {
+public class ReactorNettyHttpClientOnErrorInstrumentation extends AbstractReactorNettyHttpClientInstrumentation {
 
     @Override
     public ElementMatcher<? super MethodDescription> getMethodMatcher() {
         return isPublic()
-            .and(
-                namedOneOf(
-                    "doOnRequest",
-                    "doAfterRequest",
-                    "doOnRequestError",
-                    "doOnResponse",
-                    "doAfterResponseSuccess",
-                    "doOnRedirect",
-                    "doOnResponseError"
-                )
-            )
-            .and(takesArguments(1))
-            .and(takesArgument(0, BiConsumer.class));
+            .and(named("doOnError")
+                .and(takesArguments(2))
+                .and(takesArgument(0, BiConsumer.class))
+                .and(takesArgument(1, BiConsumer.class))
+            );
     }
 
     @SuppressWarnings("unused")
     public static class AdviceClass {
-
-        @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
-        public static void onEnter(@Advice.Argument(value = 0, readOnly = false) BiConsumer<? super HttpClientRequest, ? super Connection> callback) {
-            if (DecoratorFunctions.shouldDecorate(callback.getClass())){
-                callback = new DecoratorFunctions.OnMessageDecorator<>(callback);
+        @net.bytebuddy.asm.Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
+        public static void onEnter(@net.bytebuddy.asm.Advice.Argument(value = 0, readOnly = false) BiConsumer<? super HttpClientRequest, ? super Throwable> requestCallback, @net.bytebuddy.asm.Advice.Argument(value = 1, readOnly = false) BiConsumer<? super HttpClientResponse, ? super Throwable> responseCallback) {
+            if (DecoratorFunctions.shouldDecorate(requestCallback.getClass())) {
+                requestCallback = new DecoratorFunctions.OnMessageErrorDecorator<>(requestCallback);
+            }
+            if (DecoratorFunctions.shouldDecorate(responseCallback.getClass())) {
+                responseCallback = new DecoratorFunctions.OnMessageErrorDecorator<>(responseCallback);
             }
         }
     }
