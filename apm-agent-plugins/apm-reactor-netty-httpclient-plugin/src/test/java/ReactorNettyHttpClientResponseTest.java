@@ -19,12 +19,13 @@
 
 import co.elastic.apm.agent.httpclient.AbstractHttpClientInstrumentationTest;
 import org.junit.Before;
+import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
 /**
  * Tests using a simple implementation of the reactive netty HttpClient.
  */
-public class ReactorNettyHttpClientInstrumentationTest extends AbstractHttpClientInstrumentationTest {
+public class ReactorNettyHttpClientResponseTest extends AbstractHttpClientInstrumentationTest {
     private HttpClient client;
 
     @Before
@@ -36,10 +37,8 @@ public class ReactorNettyHttpClientInstrumentationTest extends AbstractHttpClien
             .followRedirect(true)
             .get()
             .uri(path)
-            .responseSingle((response, byteBufMono) -> {
-                return byteBufMono.map(unused -> response);
-            })
-            .block();
+            .response((response, byteBufFlux) -> Mono.from(byteBufFlux))
+            .blockFirst();
     }
 
     @Override

@@ -112,7 +112,6 @@ public abstract class AbstractResponseReceiverInstrumentation extends AbstractRe
 
                         if (childSpan != null) {
                             spanHolder.setChildSpan(childSpan);
-                            childSpan.activate();
                         }
 
                         return mono.contextWrite(ctx -> {

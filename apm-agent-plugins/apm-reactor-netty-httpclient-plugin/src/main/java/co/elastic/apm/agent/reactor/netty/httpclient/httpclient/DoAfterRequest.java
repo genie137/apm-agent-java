@@ -30,7 +30,7 @@ import java.util.function.BiConsumer;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
-public class AfterRequest extends AbstractNettyHttpClientInstrumentation {
+public class DoAfterRequest extends AbstractNettyHttpClientInstrumentation {
 
     @Override
     public ElementMatcher<? super MethodDescription> getMethodMatcher() {
@@ -44,6 +44,7 @@ public class AfterRequest extends AbstractNettyHttpClientInstrumentation {
     public static class AdviceClass {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
+        @
         public static void onEnter(@Advice.Argument(value = 0, readOnly = false) BiConsumer<? super HttpClientRequest, ? super Connection> callback) {
 
             if (DecoratorFunctions.shouldDecorate(callback.getClass())) {

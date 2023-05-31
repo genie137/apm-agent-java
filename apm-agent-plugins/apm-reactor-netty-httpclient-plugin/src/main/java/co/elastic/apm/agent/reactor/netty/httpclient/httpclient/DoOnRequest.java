@@ -24,13 +24,14 @@ import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 import net.bytebuddy.matcher.ElementMatchers;
 import reactor.netty.Connection;
+import reactor.netty.http.client.HttpClientInfos;
 import reactor.netty.http.client.HttpClientRequest;
 
 import java.util.function.BiConsumer;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
-public class OnRequest extends AbstractNettyHttpClientInstrumentation {
+public class DoOnRequest extends AbstractNettyHttpClientInstrumentation {
 
     @Override
     public ElementMatcher<? super MethodDescription> getMethodMatcher() {
@@ -44,12 +45,14 @@ public class OnRequest extends AbstractNettyHttpClientInstrumentation {
     public static class AdviceClass {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter(@Advice.Argument(value = 0, readOnly = false) BiConsumer<? super HttpClientRequest, ? super Connection> callback) {
+        @Advice.AssignReturned.ToArguments(@Advice.AssignReturned.ToArguments.ToArgument(0))
+        public static DecoratorFunctions.OnMessageDecorator<? extends HttpClientInfos> onEnter(@Advice.Argument(value = 0, readOnly = false) BiConsumer<? super HttpClientRequest, ? super Connection> callback) {
             if (DecoratorFunctions.shouldDecorate(callback.getClass())) {
                 // perform the callback with the client span active (instead of the parent) since this
                 // callback occurs after the connection is made
-                callback = new DecoratorFunctions.OnMessageDecorator<>(callback, DecoratorFunctions.PropagatedSpan.CLIENT);
+                return new DecoratorFunctions.OnMessageDecorator<>(callback, DecoratorFunctions.PropagatedSpan.CLIENT);
             }
+            return null;
         }
     }
 }

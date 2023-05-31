@@ -49,12 +49,7 @@ public class Utils {
         if (throwable != null) {
             span.captureException(throwable);
         }
-
-        System.out.println("PRE DEACTIVATE");
-//        span.deactivate();
         span.end();
-        System.out.println("POST DEACTIVATE");
-
     }
 
     public static void updateSpanWithResponse(Span<?> span, HttpClientResponse response) {
