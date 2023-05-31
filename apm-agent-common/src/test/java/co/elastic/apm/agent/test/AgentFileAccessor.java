@@ -19,8 +19,6 @@
 package co.elastic.apm.agent.test;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,12 +29,31 @@ import java.util.Objects;
  */
 public class AgentFileAccessor {
 
+    public enum Variant {
+        STANDARD("elastic-apm-agent"),
+        JAVA8_BUILD("elastic-apm-agent-java8");
+
+        private String artifact;
+        Variant(String artifact){
+            this.artifact = artifact;
+        }
+    }
+
     public static Path getPathToJavaagent() {
+        return getPathToJavaagent(Variant.STANDARD);
+    }
+
+    public static Path getPathToJavaagent(Variant agentBuild) {
         return getArtifactPath(
-            Path.of("elastic-apm-agent"),
+            Path.of(agentBuild.artifact),
             "",
             ".jar");
     }
+
+    public static Path getPathToAwsLambdaLayer() {
+        return getArtifactPath(Path.of("elastic-apm-agent"), "elastic-apm-java-aws-lambda-layer", "", ".zip");
+    }
+
 
     public static Path getPathToAttacher() {
         return getArtifactPath(
@@ -74,18 +91,22 @@ public class AgentFileAccessor {
     }
 
     public static Path getArtifactPath(Path modulePath, String artifactSuffix, String extension) {
-        Path moduleRoot = getProjectRoot().resolve(modulePath);
         String artifactName = modulePath.getFileName().toString(); // by convention artifact name the last part of the path
+        return getArtifactPath(modulePath, artifactName, artifactSuffix, extension);
+    }
+
+    private static Path getArtifactPath(Path modulePath, String artifactNamePrefix, String artifactSuffix, String extension) {
+        Path moduleRoot = getProjectRoot().resolve(modulePath);
         try {
             Path targetFolder = moduleRoot.resolve("target");
 
-            String errorMsg = String.format("unable to find artifact '%s%s-{version}%s' in folder '%s', make sure to run 'mvn package' in folder '%s' first", artifactName, artifactSuffix, extension, targetFolder.toAbsolutePath(), moduleRoot);
+            String errorMsg = String.format("unable to find artifact '%s%s-{version}%s' in folder '%s', make sure to run 'mvn package' in folder '%s' first", artifactNamePrefix, artifactSuffix, extension, targetFolder.toAbsolutePath(), moduleRoot);
             if (!Files.isDirectory(targetFolder)) {
                 throw new IllegalStateException(errorMsg);
             }
 
             return Files.find(targetFolder, 1, (path, attr) -> path.getFileName().toString()
-                    .matches(artifactName + "-\\d\\.\\d+\\.\\d+(\\.RC\\d+)?(-SNAPSHOT)?" + artifactSuffix + extension))
+                    .matches(artifactNamePrefix + "-\\d\\.\\d+\\.\\d+(\\.RC\\d+)?(-SNAPSHOT)?" + artifactSuffix + extension))
                 .findFirst()
                 .map(Path::toAbsolutePath)
                 .orElseThrow(() -> new IllegalStateException(errorMsg));

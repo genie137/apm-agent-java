@@ -19,7 +19,10 @@
 package co.elastic.apm.agent.impl;
 
 import co.elastic.apm.agent.common.JvmRuntimeInfo;
+import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
+import co.elastic.apm.agent.configuration.MetricsConfiguration;
+import co.elastic.apm.agent.configuration.ServerlessConfiguration;
 import co.elastic.apm.agent.configuration.ServiceInfo;
 import co.elastic.apm.agent.configuration.SpanConfiguration;
 import co.elastic.apm.agent.context.ClosableLifecycleListenerAdapter;
@@ -35,7 +38,6 @@ import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.impl.transaction.TraceContext;
 import co.elastic.apm.agent.impl.transaction.Transaction;
 import co.elastic.apm.agent.logging.LoggingConfiguration;
-import co.elastic.apm.agent.common.util.WildcardMatcher;
 import co.elastic.apm.agent.metrics.MetricRegistry;
 import co.elastic.apm.agent.objectpool.ObjectPool;
 import co.elastic.apm.agent.objectpool.ObjectPoolFactory;
@@ -46,20 +48,26 @@ import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import co.elastic.apm.agent.sdk.weakconcurrent.WeakConcurrent;
 import co.elastic.apm.agent.sdk.weakconcurrent.WeakMap;
-import co.elastic.apm.agent.util.DependencyInjectingServiceLoader;
-import co.elastic.apm.agent.util.ExecutorUtils;
+import co.elastic.apm.agent.tracer.GlobalTracer;
 import co.elastic.apm.agent.tracer.Scope;
 import co.elastic.apm.agent.tracer.dispatch.BinaryHeaderGetter;
 import co.elastic.apm.agent.tracer.dispatch.TextHeaderGetter;
+import co.elastic.apm.agent.util.DependencyInjectingServiceLoader;
+import co.elastic.apm.agent.util.ExecutorUtils;
+import co.elastic.apm.agent.util.PrivilegedActionUtils;
+import co.elastic.apm.agent.util.VersionUtils;
 import org.stagemonitor.configuration.ConfigurationOption;
 import org.stagemonitor.configuration.ConfigurationOptionProvider;
 import org.stagemonitor.configuration.ConfigurationRegistry;
 
 import javax.annotation.Nullable;
 import java.io.Closeable;
+import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -76,6 +84,10 @@ public class ElasticApmTracer implements Tracer {
     private static final Logger logger = LoggerFactory.getLogger(ElasticApmTracer.class);
 
     private static final WeakMap<ClassLoader, ServiceInfo> serviceInfoByClassLoader = WeakConcurrent.buildMap();
+
+    private static final Map<Class<?>, Class<? extends ConfigurationOptionProvider>> configs = new HashMap<>();
+
+    private static volatile boolean classloaderCheckOk = false;
 
     private final ConfigurationRegistry configurationRegistry;
     private final StacktraceConfiguration stacktraceConfiguration;
@@ -116,6 +128,54 @@ public class ElasticApmTracer implements Tracer {
     private volatile boolean recordingConfigOptionSet;
     private final String ephemeralId;
     private final MetaDataFuture metaDataFuture;
+
+    static {
+        checkClassloader();
+        configs.put(co.elastic.apm.agent.tracer.configuration.CoreConfiguration.class, CoreConfiguration.class);
+        configs.put(co.elastic.apm.agent.tracer.configuration.LoggingConfiguration.class, LoggingConfiguration.class);
+        configs.put(co.elastic.apm.agent.tracer.configuration.MetricsConfiguration.class, MetricsConfiguration.class);
+        configs.put(co.elastic.apm.agent.tracer.configuration.ReporterConfiguration.class, ReporterConfiguration.class);
+        configs.put(co.elastic.apm.agent.tracer.configuration.ServerlessConfiguration.class, ServerlessConfiguration.class);
+    }
+
+    private static void checkClassloader() {
+        ClassLoader cl = PrivilegedActionUtils.getClassLoader(GlobalTracer.class);
+
+        // agent currently loaded in the bootstrap CL, which is the current correct location
+        if (cl == null) {
+            return;
+        }
+
+        if (classloaderCheckOk) {
+            return;
+        }
+
+        String agentLocation = PrivilegedActionUtils.getProtectionDomain(GlobalTracer.class).getCodeSource().getLocation().getFile();
+        if (!agentLocation.endsWith(".jar")) {
+            // agent is not packaged, thus we assume running tests
+            classloaderCheckOk = true;
+            return;
+        }
+
+        String premainClass = VersionUtils.getManifestEntry(new File(agentLocation), "Premain-Class");
+        if (null == premainClass) {
+            // packaged within a .jar, but not within an agent jar, thus we assume it's still for testing
+            classloaderCheckOk = true;
+            return;
+        }
+
+        if (premainClass.startsWith("co.elastic.apm.agent")) {
+            // premain class will only be present when packaged as an agent jar
+            classloaderCheckOk = true;
+            return;
+        }
+
+        // A packaged agent class has been loaded outside of bootstrap classloader, we are not in the context of
+        // unit/integration tests, that's likely a setup issue where the agent jar has been added to application
+        // classpath.
+        throw new IllegalStateException(String.format("Agent setup error: agent jar file \"%s\"  likely referenced in JVM or application classpath", agentLocation));
+
+    }
 
     ElasticApmTracer(ConfigurationRegistry configurationRegistry, MetricRegistry metricRegistry, Reporter reporter, ObjectPoolFactory poolFactory,
                      ApmServerClient apmServerClient, final String ephemeralId, MetaDataFuture metaDataFuture) {
@@ -379,7 +439,9 @@ public class ElasticApmTracer implements Tracer {
     @SuppressWarnings({"unchecked", "rawtypes"})
     public <T> T getConfig(Class<T> configProvider) {
         T configuration = null;
-        if (ConfigurationOptionProvider.class.isAssignableFrom(configProvider)) {
+        if (configs.containsKey(configProvider)) {
+            configuration = (T) configurationRegistry.getConfig(configs.get(configProvider));
+        } else if (ConfigurationOptionProvider.class.isAssignableFrom(configProvider)) {
              configuration = (T) configurationRegistry.getConfig((Class) configProvider);
         }
         if (configuration == null) {
@@ -403,6 +465,10 @@ public class ElasticApmTracer implements Tracer {
         } else {
             transaction.decrementReferences();
         }
+    }
+
+    public void reportPartialTransaction(Transaction transaction) {
+        reporter.reportPartialTransaction(transaction);
     }
 
     public void endSpan(Span span) {
@@ -867,4 +933,10 @@ public class ElasticApmTracer implements Tracer {
         }
         return cast;
     }
+
+    @Override
+    public Set<String> getTraceHeaderNames() {
+        return TraceContext.TRACE_TEXTUAL_HEADERS;
+    }
+
 }

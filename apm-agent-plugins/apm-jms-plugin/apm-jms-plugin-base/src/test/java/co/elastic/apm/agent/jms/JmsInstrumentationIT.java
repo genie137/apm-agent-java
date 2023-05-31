@@ -21,7 +21,7 @@ package co.elastic.apm.agent.jms;
 
 import co.elastic.apm.agent.AbstractInstrumentationTest;
 import co.elastic.apm.agent.configuration.CoreConfiguration;
-import co.elastic.apm.agent.configuration.MessagingConfiguration;
+import co.elastic.apm.agent.tracer.configuration.MessagingConfiguration;
 import co.elastic.apm.agent.impl.TracerInternalApiUtils;
 import co.elastic.apm.agent.impl.context.Headers;
 import co.elastic.apm.agent.impl.sampling.ConstantSampler;
@@ -62,12 +62,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static co.elastic.apm.agent.configuration.MessagingConfiguration.JmsStrategy.BOTH;
-import static co.elastic.apm.agent.configuration.MessagingConfiguration.JmsStrategy.POLLING;
+import static co.elastic.apm.agent.tracer.configuration.MessagingConfiguration.JmsStrategy.BOTH;
+import static co.elastic.apm.agent.tracer.configuration.MessagingConfiguration.JmsStrategy.POLLING;
 import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.JMS_EXPIRATION_HEADER;
 import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.JMS_MESSAGE_ID_HEADER;
 import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.JMS_TIMESTAMP_HEADER;
-import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.JMS_TRACE_PARENT_PROPERTY;
 import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.MESSAGING_TYPE;
 import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.TEMP;
 import static co.elastic.apm.agent.jms.JmsInstrumentationHelper.TIBCO_TMP_QUEUE_PREFIX;
@@ -77,6 +76,8 @@ import static org.mockito.Mockito.mock;
 
 @RunWith(Parameterized.class)
 public class JmsInstrumentationIT extends AbstractInstrumentationTest {
+
+    private static final String JMS_TRACE_PARENT_PROPERTY = TraceContext.ELASTIC_TRACE_PARENT_TEXTUAL_HEADER_NAME.replace('-', '_');
 
     // Keeping a static reference for resource cleaning
     private final static Set<BrokerFacade> staticBrokerFacade = new HashSet<>();
@@ -536,8 +537,13 @@ public class JmsInstrumentationIT extends AbstractInstrumentationTest {
         for (Transaction receiveTransaction : receiveTransactions) {
             assertThat(receiveTransaction.getNameAsString()).startsWith("JMS RECEIVE from ");
             assertThat(receiveTransaction.getNameAsString()).endsWith(destinationName);
-            assertThat(receiveTransaction.getTraceContext().getTraceId()).isEqualTo(currentTraceId);
-            assertThat(receiveTransaction.getTraceContext().getParentId()).isEqualTo(sendInitialMessageSpan.getTraceContext().getId());
+            if (receiveTransaction.getSpanLinks().isEmpty()) {
+                assertThat(receiveTransaction.getTraceContext().getTraceId()).isEqualTo(currentTraceId);
+                assertThat(receiveTransaction.getTraceContext().getParentId()).isEqualTo(sendInitialMessageSpan.getTraceContext().getId());
+            } else {
+                assertThat(receiveTransaction.getSpanLinks().get(0).getTraceId()).isEqualTo(currentTraceId);
+                assertThat(receiveTransaction.getSpanLinks().get(0).getParentId()).isEqualTo(sendInitialMessageSpan.getTraceContext().getId());
+            }
             assertThat(receiveTransaction.getType()).isEqualTo(MESSAGING_TYPE);
             assertThat(receiveTransaction.getContext().getMessage().getQueueName()).isEqualTo(destinationName);
             StringBuilder body = receiveTransaction.getContext().getMessage().getBodyForRead();

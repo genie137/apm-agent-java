@@ -19,16 +19,16 @@
 package co.elastic.apm.agent.configuration;
 
 import co.elastic.apm.agent.bci.ElasticApmAgent;
-import co.elastic.apm.agent.configuration.converter.ListValueConverter;
-import co.elastic.apm.agent.configuration.converter.RoundedDoubleConverter;
-import co.elastic.apm.agent.configuration.converter.TimeDuration;
-import co.elastic.apm.agent.configuration.converter.TimeDurationValueConverter;
+import co.elastic.apm.agent.tracer.configuration.ListValueConverter;
+import co.elastic.apm.agent.tracer.configuration.RoundedDoubleConverter;
+import co.elastic.apm.agent.tracer.configuration.TimeDuration;
+import co.elastic.apm.agent.tracer.configuration.TimeDurationValueConverter;
 import co.elastic.apm.agent.configuration.validation.RegexValidator;
 import co.elastic.apm.agent.impl.transaction.Span;
 import co.elastic.apm.agent.matcher.MethodMatcher;
 import co.elastic.apm.agent.matcher.MethodMatcherValueConverter;
 import co.elastic.apm.agent.common.util.WildcardMatcher;
-import co.elastic.apm.agent.matcher.WildcardMatcherValueConverter;
+import co.elastic.apm.agent.tracer.configuration.WildcardMatcherValueConverter;
 import co.elastic.apm.agent.sdk.logging.Logger;
 import co.elastic.apm.agent.sdk.logging.LoggerFactory;
 import org.stagemonitor.configuration.ConfigurationOption;
@@ -59,8 +59,9 @@ import java.util.concurrent.TimeUnit;
 import static co.elastic.apm.agent.configuration.validation.RangeValidator.isInRange;
 import static co.elastic.apm.agent.logging.LoggingConfiguration.AGENT_HOME_PLACEHOLDER;
 
-public class CoreConfiguration extends ConfigurationOptionProvider {
+public class CoreConfiguration extends ConfigurationOptionProvider implements co.elastic.apm.agent.tracer.configuration.CoreConfiguration {
 
+    public static final int DEFAULT_LONG_FIELD_MAX_LENGTH = 10000;
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     public static final String INSTRUMENT = "instrument";
@@ -248,6 +249,23 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
             "A message will be logged when the max number of spans has been exceeded but only at a rate of once every " + TimeUnit.MICROSECONDS.toMinutes(Span.MAX_LOG_INTERVAL_MICRO_SECS) + " minutes to ensure performance is not impacted.")
         .dynamic(true)
         .buildWithDefault(500);
+
+    private final ConfigurationOption<Integer> longFieldMaxLength = ConfigurationOption.integerOption()
+        .key("long_field_max_length")
+        .configurationCategory(CORE_CATEGORY)
+        .tags("performance", "added[1.37.0]")
+        .description("\n" +
+            "The following transaction, span, and error fields will be truncated at this number of unicode characters " +
+            "before being sent to APM server:\n\n" +
+            "- `transaction.context.request.body`, `error.context.request.body`\n" +
+            "- `transaction.context.message.body`, `error.context.message.body`\n" +
+            "- `span.context.db.statement`\n" +
+            "\nNote that tracing data is limited at the upstream APM server to \n" +
+            "{apm-guide-ref}/configuration-process.html#max_event_size[`max_event_size`], \n" +
+            "which defaults to 300kB. If you configure `long_field_max_length` too large, it \n" +
+            "could result in transactions, spans, or errors that are rejected by APM server.")
+        .dynamic(false)
+        .buildWithDefault(DEFAULT_LONG_FIELD_MAX_LENGTH);
 
     private final ConfigurationOption<List<WildcardMatcher>> sanitizeFieldNames = ConfigurationOption
         .builder(new ListValueConverter<>(new WildcardMatcherValueConverter()), List.class)
@@ -829,6 +847,7 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         return Arrays.asList(instrument, traceMethods, enabledInstrumentations, disabledInstrumentations, enableExperimentalInstrumentations);
     }
 
+    @Override
     public String getServiceName() {
         return serviceName.get();
     }
@@ -873,10 +892,16 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         return transactionMaxSpans.get();
     }
 
+    public int getLongFieldMaxLength() {
+        return longFieldMaxLength.get();
+    }
+
+    @Override
     public List<WildcardMatcher> getSanitizeFieldNames() {
         return sanitizeFieldNames.get();
     }
 
+    @Override
     public boolean isInstrumentationEnabled(String instrumentationGroupName) {
         final Collection<String> enabledInstrumentationGroupNames = enabledInstrumentations.get();
         final Collection<String> disabledInstrumentationGroupNames = disabledInstrumentations.get();
@@ -885,6 +910,7 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
             (enableExperimentalInstrumentations.get() || !instrumentationGroupName.equals("experimental"));
     }
 
+    @Override
     public boolean isInstrumentationEnabled(Collection<String> instrumentationGroupNames) {
         return isGroupEnabled(instrumentationGroupNames) &&
             !isGroupDisabled(instrumentationGroupNames);
@@ -921,10 +947,12 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         return ignoreExceptions.get();
     }
 
+    @Override
     public EventType getCaptureBody() {
         return captureBody.get();
     }
 
+    @Override
     public boolean isCaptureHeaders() {
         return captureHeaders.get();
     }
@@ -998,6 +1026,7 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         return tracestateHeaderSizeLimit.get();
     }
 
+    @Override
     public TimeDuration getSpanMinDuration() {
         return spanMinDuration.get();
     }
@@ -1073,6 +1102,7 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         return cloudProvider.get();
     }
 
+    @Override
     public boolean isEnablePublicApiAnnotationInheritance() {
         return enablePublicApiAnnotationInheritance.get();
     }
@@ -1085,32 +1115,9 @@ public class CoreConfiguration extends ConfigurationOptionProvider {
         return traceContinuationStrategy.get();
     }
 
+    @Override
     public ActivationMethod getActivationMethod() {
         return activationMethod.get();
-    }
-
-    public enum EventType {
-        /**
-         * Request bodies will never be reported
-         */
-        OFF,
-        /**
-         * Request bodies will only be reported with errors
-         */
-        ERRORS,
-        /**
-         * Request bodies will only be reported with request transactions
-         */
-        TRANSACTIONS,
-        /**
-         * Request bodies will be reported with both errors and request transactions
-         */
-        ALL;
-
-        @Override
-        public String toString() {
-            return name().toLowerCase();
-        }
     }
 
     public enum CloudProvider {

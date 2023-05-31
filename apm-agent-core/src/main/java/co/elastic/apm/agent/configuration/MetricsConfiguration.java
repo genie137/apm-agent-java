@@ -18,7 +18,7 @@
  */
 package co.elastic.apm.agent.configuration;
 
-import co.elastic.apm.agent.configuration.converter.ListValueConverter;
+import co.elastic.apm.agent.tracer.configuration.ListValueConverter;
 import org.stagemonitor.configuration.ConfigurationOption;
 import org.stagemonitor.configuration.ConfigurationOptionProvider;
 import org.stagemonitor.configuration.converter.DoubleValueConverter;
@@ -29,7 +29,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 
-public class MetricsConfiguration extends ConfigurationOptionProvider {
+public class MetricsConfiguration extends ConfigurationOptionProvider implements co.elastic.apm.agent.tracer.configuration.MetricsConfiguration {
 
     private static final String METRICS_CATEGORY = "Metrics";
 
@@ -49,7 +49,7 @@ public class MetricsConfiguration extends ConfigurationOptionProvider {
         .key("custom_metrics_histogram_boundaries")
         .configurationCategory(METRICS_CATEGORY)
         .description("Defines the default bucket boundaries to use for OpenTelemetry histograms.")
-        .dynamic(true)
+        .dynamic(false)
         .tags("added[1.37.0]", "experimental")
         .addValidator(new ConfigurationOption.Validator<List<Double>>() {
             @Override
@@ -101,6 +101,7 @@ public class MetricsConfiguration extends ConfigurationOptionProvider {
         .dynamic(false)
         .buildWithDefault(false);
 
+    @Override
     public boolean isDedotCustomMetrics() {
         return dedotCustomMetrics.get();
     }
@@ -117,6 +118,7 @@ public class MetricsConfiguration extends ConfigurationOptionProvider {
         return overheadMetricsEnabled.get();
     }
 
+    @Override
     public List<Double> getCustomMetricsHistogramBoundaries() {
         return customMetricsHistogramBoundaries.get();
     }
