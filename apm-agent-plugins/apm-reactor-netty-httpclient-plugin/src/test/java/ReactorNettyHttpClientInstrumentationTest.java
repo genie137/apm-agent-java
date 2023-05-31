@@ -28,27 +28,34 @@ public class ReactorNettyHttpClientInstrumentationTest extends AbstractHttpClien
     private HttpClient client;
 
     @Before
-    public void setUp() {
-        client = HttpClient.create();
-    }
+    public void setUp() { client = buildHttpClient(); }
 
     @Override
     protected void performGet(String path) throws Exception {
         client
+            .followRedirect(true)
             .get()
             .uri(path)
-            .response()
+            .responseSingle((response, byteBufMono) -> {
+                return byteBufMono.map(unused -> response);
+            })
             .block();
     }
 
     @Override
     protected boolean isErrorOnCircularRedirectSupported() {
-        // skip circular redirect test
-        //
-        // this http client just gives up after a fixed amount of redirects
-        // this value can be set with the 'jdk.httpclient.redirects.retrylimit' and defaults to 5.
-        // there is no exception thrown, the response provided to the user is just a redirect response
         return false;
+    }
+
+    @Override
+    public boolean isTestHttpCallWithUserInfoEnabled() {
+        return false;
+    }
+
+    protected HttpClient buildHttpClient() {
+        HttpClient httpClient = HttpClient.create();
+        httpClient.wiretap(true);
+        return httpClient;
     }
 
 }

@@ -16,11 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package co.elastic.apm.agent.reactor.netty.httpclient;
+package co.elastic.apm.agent.reactor.netty.httpclient.httpclient;
 
+import co.elastic.apm.agent.reactor.netty.httpclient.DecoratorFunctions;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import net.bytebuddy.matcher.ElementMatchers;
 import reactor.netty.Connection;
 import reactor.netty.http.client.HttpClientRequest;
 
@@ -28,34 +30,25 @@ import java.util.function.BiConsumer;
 
 import static net.bytebuddy.matcher.ElementMatchers.*;
 
-
-public class ReactorNettyHttpClientInstrumentation extends AbstractReactorNettyHttpClientInstrumentation {
+public class AfterRequest extends AbstractNettyHttpClientInstrumentation {
 
     @Override
     public ElementMatcher<? super MethodDescription> getMethodMatcher() {
-        return isPublic()
-            .and(
-                namedOneOf(
-                    "doOnRequest",
-                    "doAfterRequest",
-                    "doOnRequestError",
-                    "doOnResponse",
-                    "doAfterResponseSuccess",
-                    "doOnRedirect",
-                    "doOnResponseError"
-                )
-            )
-            .and(takesArguments(1))
-            .and(takesArgument(0, BiConsumer.class));
+        return ElementMatchers
+                .isPublic()
+                .and(hasMethodName("doAfterRequest"))
+                .and(takesArguments(1))
+                .and(takesArgument(0, BiConsumer.class));
     }
 
-    @SuppressWarnings("unused")
     public static class AdviceClass {
 
-        @Advice.OnMethodEnter(suppress = Throwable.class, inline = false)
+        @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(@Advice.Argument(value = 0, readOnly = false) BiConsumer<? super HttpClientRequest, ? super Connection> callback) {
-            if (DecoratorFunctions.shouldDecorate(callback.getClass())){
-                callback = new DecoratorFunctions.OnMessageDecorator<>(callback);
+
+            if (DecoratorFunctions.shouldDecorate(callback.getClass())) {
+                // use client context after request is sent
+                callback = new DecoratorFunctions.OnMessageDecorator<>(callback, DecoratorFunctions.PropagatedSpan.CLIENT);
             }
         }
     }

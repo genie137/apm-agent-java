@@ -1,0 +1,5 @@
+co.elastic.apm.agent.reactor.netty.httpclient.responsereceiver.ResponseConnectionInstrumentation
+co.elastic.apm.agent.reactor.netty.httpclient.responsereceiver.ResponseContentInstrumentation
+co.elastic.apm.agent.reactor.netty.httpclient.responsereceiver.ResponseFluxInstrumentation
+co.elastic.apm.agent.reactor.netty.httpclient.responsereceiver.ResponseMonoInstrumentation
+co.elastic.apm.agent.reactor.netty.httpclient.responsereceiver.ResponseSingleInstrumentation

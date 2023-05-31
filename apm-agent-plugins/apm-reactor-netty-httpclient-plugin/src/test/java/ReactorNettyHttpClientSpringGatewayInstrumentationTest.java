@@ -38,19 +38,23 @@ public class ReactorNettyHttpClientSpringGatewayInstrumentationTest extends Abst
     @Override
     protected void performGet(String path) throws Exception {
         client
+            .followRedirect(true)
             .get()
             .uri(path)
-            .response()
+            .responseSingle((response, byteBufMono) -> {
+                // Calling this causes the span to end.
+                return byteBufMono.map(unused -> response);
+            })
             .block();
     }
 
     @Override
     protected boolean isErrorOnCircularRedirectSupported() {
-        // skip circular redirect test
-        //
-        // this http client just gives up after a fixed amount of redirects
-        // this value can be set with the 'jdk.httpclient.redirects.retrylimit' and defaults to 5.
-        // there is no exception thrown, the response provided to the user is just a redirect response
+        return false;
+    }
+
+    @Override
+    public boolean isTestHttpCallWithUserInfoEnabled() {
         return false;
     }
 
@@ -58,6 +62,7 @@ public class ReactorNettyHttpClientSpringGatewayInstrumentationTest extends Abst
         ConnectionProvider connectionProvider = buildConnectionprovider();
         HttpClient httpClient = HttpClient.create(connectionProvider);
         httpClient.wiretap(true);
+        httpClient.followRedirect(true);
         return httpClient;
     }
 
